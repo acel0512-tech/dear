@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Camera, X, ScanLine, SunMedium, Loader2, Focus, RefreshCw, Settings2 } from 'lucide-react';
+import { Camera, X, ScanLine, SunMedium, Loader2, Focus, RefreshCw, Settings2, SwitchCamera } from 'lucide-react';
 import { compressImage } from '../services/imageCompressionService';
 
 interface ScalpCameraProps {
@@ -17,6 +17,7 @@ const ScalpCamera: React.FC<ScalpCameraProps> = ({ onCapture, modeLabel }) => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [scanLinePos, setScanLinePos] = useState(0);
   const [showDeviceList, setShowDeviceList] = useState(false);
+  const [cameraError, setCameraError] = useState<string>('');
 
   useEffect(() => {
     if (!isActive) return;
@@ -24,33 +25,39 @@ const ScalpCamera: React.FC<ScalpCameraProps> = ({ onCapture, modeLabel }) => {
     return () => clearInterval(interval);
   }, [isActive]);
 
-  // 獲取所有攝像設備並嘗試尋找 USB 顯微鏡
+  // 獲取所有攝像設備
   const refreshDevices = async () => {
     try {
-      // 先請求權限以獲取設備標籤
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      // 1. 先請求權限以獲取設備標籤 (Mobile Chrome 必須先 getUserMedia 才能看到 label)
+      const initialStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      
+      // 2. 列舉設備
       const allDevices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = allDevices.filter(device => device.kind === 'videoinput');
       setDevices(videoDevices);
 
-      if (videoDevices.length > 0) {
-        // 優先邏輯：尋找關鍵字
+      // 3. 關閉初始串流，釋放資源
+      initialStream.getTracks().forEach(t => t.stop());
+
+      // 4. 智慧選擇邏輯
+      if (videoDevices.length > 0 && !selectedDeviceId) {
+        // 優先尋找關鍵字
         const microscope = videoDevices.find(d => {
           const label = d.label.toLowerCase();
-          return label.includes('microscope') || label.includes('usb') || label.includes('endoscope') || label.includes('uv');
+          return label.includes('microscope') || label.includes('usb') || label.includes('endoscope') || label.includes('uv') || label.includes('external');
         });
         
-        // 如果沒找到關鍵字，但只有一個外接設備，通常就是它
         if (microscope) {
           setSelectedDeviceId(microscope.deviceId);
-        } else if (!selectedDeviceId) {
-          // 如果沒有選定且沒有關鍵字，預設選最後一個（外接設備通常在列表後方）
+        } else {
+          // 手機邏輯：通常外接鏡頭是最後一個裝置
+          // 如果是在手機上，預設使用後置鏡頭(environment)，如果接了OTG，通常會變成最後一個
           setSelectedDeviceId(videoDevices[videoDevices.length - 1].deviceId);
         }
       }
-      stream.getTracks().forEach(t => t.stop());
-    } catch (e) {
+    } catch (e: any) {
       console.error("無法列出鏡頭設備", e);
+      setCameraError("無法存取相機權限");
     }
   };
 
@@ -58,10 +65,18 @@ const ScalpCamera: React.FC<ScalpCameraProps> = ({ onCapture, modeLabel }) => {
     if (isActive) refreshDevices();
   }, [isActive]);
 
+  // 啟動鏡頭串流 (含錯誤重試機制)
   useEffect(() => {
     if (isActive && selectedDeviceId) {
-        const start = async () => {
+        const startStream = async () => {
+            setCameraError('');
+            if (videoRef.current?.srcObject) {
+               const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+               tracks.forEach(t => t.stop());
+            }
+
             try {
+                // 嘗試 1: 高解析度 (適合電腦版/高階鏡頭)
                 const stream = await navigator.mediaDevices.getUserMedia({
                   video: { 
                     deviceId: { exact: selectedDeviceId }, 
@@ -70,11 +85,24 @@ const ScalpCamera: React.FC<ScalpCameraProps> = ({ onCapture, modeLabel }) => {
                   }
                 });
                 if (videoRef.current) videoRef.current.srcObject = stream;
-            } catch (err) {
-                console.error("無法啟動選定鏡頭", err);
+            } catch (errHighRes) {
+                console.warn("高解析度啟動失敗，嘗試標準模式...", errHighRes);
+                try {
+                    // 嘗試 2: 放寬解析度限制 (適合手機/舊款鏡頭)
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                      video: { 
+                        deviceId: { exact: selectedDeviceId }
+                        // 不設定 width/height，讓瀏覽器自動協商
+                      }
+                    });
+                    if (videoRef.current) videoRef.current.srcObject = stream;
+                } catch (errBasic) {
+                    console.error("鏡頭啟動完全失敗", errBasic);
+                    setCameraError("無法啟動此鏡頭，請拔插後重試");
+                }
             }
         };
-        start();
+        startStream();
     }
     return () => {
         if (videoRef.current?.srcObject) {
@@ -82,6 +110,14 @@ const ScalpCamera: React.FC<ScalpCameraProps> = ({ onCapture, modeLabel }) => {
         }
     };
   }, [isActive, selectedDeviceId]);
+
+  // 切換到下一個鏡頭 (手機版專用)
+  const cycleCamera = () => {
+    if (devices.length <= 1) return;
+    const currentIndex = devices.findIndex(d => d.deviceId === selectedDeviceId);
+    const nextIndex = (currentIndex + 1) % devices.length;
+    setSelectedDeviceId(devices[nextIndex].deviceId);
+  };
 
   const handleCapture = useCallback(async () => {
     if (isCapturing || !videoRef.current || !canvasRef.current) return;
@@ -141,40 +177,62 @@ const ScalpCamera: React.FC<ScalpCameraProps> = ({ onCapture, modeLabel }) => {
         <div className="flex flex-col">
             <span className="text-white font-black text-xs tracking-[0.3em] uppercase">{modeLabel || 'Spectrum Analysis'}</span>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-orange-500 text-[10px] font-mono animate-pulse">● OPTICAL ACTIVE</span>
-              <span className="text-white/40 text-[10px] font-mono">| {currentDeviceLabel}</span>
+              <span className={`text-[10px] font-mono ${cameraError ? 'text-red-500' : 'text-orange-500 animate-pulse'}`}>
+                {cameraError ? '● ERROR' : '● OPTICAL ACTIVE'}
+              </span>
+              <span className="text-white/40 text-[10px] font-mono max-w-[150px] truncate">| {currentDeviceLabel}</span>
             </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Mobile Cycle Camera Button */}
+          <button 
+             type="button"
+             onClick={cycleCamera}
+             className="md:hidden p-2 rounded-full bg-white/10 border border-white/20 text-white active:bg-orange-500 active:border-orange-500 transition-all"
+          >
+             <SwitchCamera className="w-5 h-5" />
+          </button>
+
+          {/* Desktop Device List Toggle */}
           <button 
             type="button"
             onClick={() => setShowDeviceList(!showDeviceList)}
-            className={`p-2 rounded-full border transition-all ${showDeviceList ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white/10 border-white/20 text-white'}`}
+            className={`hidden md:block p-2 rounded-full border transition-all ${showDeviceList ? 'bg-orange-500 border-orange-500 text-white' : 'bg-white/10 border-white/20 text-white'}`}
           >
             <Settings2 className="w-5 h-5" />
           </button>
+          
           <button onClick={() => setIsActive(false)} className="text-white/60 hover:text-white p-2 transition-colors"><X className="w-6 h-6" /></button>
         </div>
       </div>
 
-      {/* Device Selection Menu (Popup) */}
+      {/* Device Selection Menu (Desktop Popup) */}
       {showDeviceList && (
         <div className="absolute top-20 right-6 w-64 bg-stone-900/90 backdrop-blur-xl border border-white/10 rounded-2xl z-50 p-2 shadow-2xl animate-fade-in-up">
           <div className="px-3 py-2 text-white/40 text-[10px] font-bold uppercase tracking-widest border-b border-white/5 mb-1 flex justify-between items-center">
             切換檢測鏡頭
             <button onClick={refreshDevices}><RefreshCw className="w-3 h-3 hover:text-white" /></button>
           </div>
-          {devices.map(device => (
+          {devices.map((device, idx) => (
             <button
               key={device.deviceId}
               onClick={() => { setSelectedDeviceId(device.deviceId); setShowDeviceList(false); }}
               className={`w-full text-left px-3 py-2.5 rounded-xl text-xs flex items-center justify-between transition-colors ${selectedDeviceId === device.deviceId ? 'bg-orange-500 text-white' : 'text-white/70 hover:bg-white/5'}`}
             >
-              <span className="truncate pr-2">{device.label || `鏡頭 ${device.deviceId.slice(0, 4)}`}</span>
+              <span className="truncate pr-2">{device.label || `鏡頭 ${idx + 1}`}</span>
               {selectedDeviceId === device.deviceId && <RefreshCw className="w-3 h-3 animate-spin-slow" />}
             </button>
           ))}
         </div>
+      )}
+
+      {/* Error Message Display */}
+      {cameraError && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 bg-red-900/80 backdrop-blur-md px-6 py-4 rounded-xl text-center border border-red-500/50">
+              <p className="text-white font-bold mb-2">鏡頭連接異常</p>
+              <p className="text-white/70 text-xs mb-4">{cameraError}</p>
+              <button onClick={refreshDevices} className="bg-white text-red-900 px-4 py-2 rounded-lg text-sm font-bold">重試連接</button>
+          </div>
       )}
 
       <div className="flex-1 bg-black flex items-center justify-center relative">
@@ -184,8 +242,8 @@ const ScalpCamera: React.FC<ScalpCameraProps> = ({ onCapture, modeLabel }) => {
       <div className="p-8 md:p-12 bg-gradient-to-t from-black to-transparent flex justify-center items-center z-40">
         <button 
           onClick={handleCapture} 
-          disabled={isCapturing} 
-          className="relative w-24 h-24 rounded-full border-4 border-white/20 flex items-center justify-center active:scale-95 transition-all hover:border-white/40 group"
+          disabled={isCapturing || !!cameraError} 
+          className="relative w-24 h-24 rounded-full border-4 border-white/20 flex items-center justify-center active:scale-95 transition-all hover:border-white/40 group disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {/* Inner Ring Decor */}
           <div className="absolute inset-2 rounded-full border border-white/10 group-hover:scale-110 transition-transform"></div>
@@ -195,7 +253,7 @@ const ScalpCamera: React.FC<ScalpCameraProps> = ({ onCapture, modeLabel }) => {
           </div>
           
           {/* Status Dot */}
-          <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full border-2 border-black animate-pulse"></div>
+          <div className={`absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-black ${!!cameraError ? 'bg-red-500' : 'bg-orange-500 animate-pulse'}`}></div>
         </button>
       </div>
 
