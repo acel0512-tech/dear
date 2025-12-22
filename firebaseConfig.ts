@@ -1,10 +1,10 @@
+
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
 
-// TODO: 請將此處替換為您從 Firebase Console 取得的設定
-// Go to Firebase Console -> Project Settings -> General -> Your apps -> SDK setup and configuration
+// 注意：在 Vercel 上發布時，請務必在 Vercel Dashboard 設定對應的環境變數
 const firebaseConfig = {
   apiKey: "YOUR_API_KEY",
   authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
@@ -14,19 +14,23 @@ const firebaseConfig = {
   appId: "YOUR_APP_ID"
 };
 
-// Check if the config is still using placeholders
+// 檢查是否已填寫正確的 Firebase 配置
 export const isFirebaseConfigured = 
+  firebaseConfig.apiKey !== "" && 
   firebaseConfig.apiKey !== "YOUR_API_KEY" && 
   firebaseConfig.projectId !== "YOUR_PROJECT_ID";
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const storage = getStorage(app);
-const functions = getFunctions(app);
+let db: any;
+let storage: any;
+let functions: any;
 
-if (!isFirebaseConfigured) {
-  console.warn("⚠️ Firebase 尚未設定：將使用 LocalStorage 模式運行 (僅本機儲存)。請至 firebaseConfig.ts 更新您的金鑰以啟用雲端備份。");
+if (isFirebaseConfigured) {
+  const app = initializeApp(firebaseConfig);
+  db = getFirestore(app);
+  storage = getStorage(app);
+  functions = getFunctions(app);
+} else {
+  console.warn("⚠️ Firebase 尚未設定：將使用 LocalStorage 模式運行 (僅本機儲存)。");
 }
 
 export { db, storage, functions };

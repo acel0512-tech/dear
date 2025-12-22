@@ -5,6 +5,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>訫肌 | 頭皮管理中心</title>
+    
+    <!-- 1. 環境變數補丁：防止 process is not defined 導致的白畫面 -->
+    <script>
+      window.process = window.process || { env: {} };
+    </script>
+
+    <!-- 2. 引入 LINE LIFF SDK -->
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
       @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700;900&display=swap');
@@ -39,24 +48,34 @@
       @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
       .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
     </style>
-  <script type="importmap">
+
+    <script type="importmap">
 {
   "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react-dom": "https://esm.sh/react-dom@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "@google/genai": "https://esm.sh/@google/genai@^1.33.0",
     "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
-    "react": "https://esm.sh/react@^19.2.3",
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
-    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
-    "firebase/storage": "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js",
-    "firebase/functions": "https://www.gstatic.com/firebasejs/10.7.1/firebase-functions.js",
-    "firebase/": "https://esm.sh/firebase@^12.6.0/"
+    "firebase/app": "https://esm.sh/firebase@^10.7.1/app",
+    "firebase/firestore": "https://esm.sh/firebase@^10.7.1/firestore",
+    "firebase/storage": "https://esm.sh/firebase@^10.7.1/storage",
+    "firebase/functions": "https://esm.sh/firebase@^10.7.1/functions",
+    "firebase/": "https://esm.sh/firebase@^12.7.0/"
   }
 }
 </script>
-</head>
+  </head>
   <body>
     <div id="root"></div>
+    <!-- 監控模組載入錯誤 -->
+    <script>
+      window.addEventListener('error', function(e) {
+        if (e.message.includes('process is not defined') || e.message.includes('import')) {
+          console.error('偵測到關鍵渲染錯誤:', e.message);
+        }
+      }, true);
+    </script>
   </body>
 </html>
