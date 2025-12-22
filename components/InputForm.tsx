@@ -51,7 +51,6 @@ const RadioGroup = ({ value, onChange, options, disabled = false }: { value: str
   </div>
 );
 
-// Fix: Completed the component implementation and added default export to resolve App.tsx import error.
 const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading, initialBeforeObservation }) => {
   const [activeTab, setActiveTab] = useState<'before' | 'after'>('before');
   const [previewImage, setPreviewImage] = useState<{ src: string, title: string } | null>(null);
@@ -80,14 +79,9 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading, initialBefor
       setActiveTab('after');
     }
     
-    // Cleanup recognition on unmount
     return () => {
       if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {
-          // Ignore close errors
-        }
+        try { recognitionRef.current.stop(); } catch (e) {}
       }
     };
   }, [initialBeforeObservation]);
@@ -125,27 +119,24 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading, initialBefor
     );
   };
 
+  // 語音筆記優化邏輯
   const toggleVoiceInput = () => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     
     if (!SpeechRecognition) {
-      alert("抱歉，您的設備或瀏覽器不支援語音辨識功能。建議使用 Chrome 或 Safari 瀏覽器並確保麥克風已授權。");
+      alert("抱歉，您的設備不支援語音辨識。請確保使用 Chrome / Safari 並開啟 HTTPS 連線。");
       return;
     }
 
     if (isListening) {
       if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {}
+        try { recognitionRef.current.stop(); } catch (e) {}
       }
       setIsListening(false);
       return;
     }
 
-    // 立即提供視覺回饋
-    setIsListening(true);
-
+    // 啟動流程
     try {
       const recognition = new SpeechRecognition();
       recognition.lang = 'zh-TW';
@@ -153,7 +144,7 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading, initialBefor
       recognition.interimResults = false;
 
       recognition.onstart = () => {
-        console.log('Voice recognition started');
+        setIsListening(true);
       };
 
       recognition.onresult = (event: any) => {
@@ -162,30 +153,26 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading, initialBefor
           setConsultantNotes(prev => prev + (prev ? '，' : '') + text);
           setShowManualNote(true);
         }
-        setIsListening(false);
       };
 
       recognition.onerror = (event: any) => {
         console.error('Speech recognition error:', event.error);
         setIsListening(false);
         if (event.error === 'not-allowed') {
-          alert("請授權麥克風存取權限以使用語音筆記功能。");
-        } else if (event.error === 'no-speech') {
-          // Just reset without alert if no speech detected
-        } else {
-          alert(`語音辨識發生錯誤: ${event.error}`);
+          alert("請授權麥克風權限以使用此功能。");
+        } else if (event.error !== 'no-speech') {
+          alert(`語音辨識錯誤: ${event.error}`);
         }
       };
 
       recognition.onend = () => {
-        console.log('Voice recognition ended');
         setIsListening(false);
       };
 
       recognitionRef.current = recognition;
       recognition.start();
     } catch (err) {
-      console.error('Failed to start speech recognition:', err);
+      console.error('Failed to init recognition:', err);
       setIsListening(false);
     }
   };
@@ -367,9 +354,9 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, isLoading, initialBefor
             <button
               type="button"
               onClick={toggleVoiceInput}
-              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full transition-all ${
+              className={`flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full transition-all shadow-sm ${
                 isListening 
-                ? 'bg-rose-100 text-rose-700 animate-pulse border border-rose-200' 
+                ? 'bg-orange-600 text-white animate-pulse border-orange-700' 
                 : 'bg-stone-100 text-stone-600 border border-stone-200 hover:bg-stone-200'
               }`}
             >
