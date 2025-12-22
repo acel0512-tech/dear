@@ -4,8 +4,10 @@ import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions";
 
-// 注意：在 Vercel 上發布時，請務必在 Vercel Dashboard 設定對應的環境變數
-const firebaseConfig = {
+// 嘗試從環境變數讀取配置 (Vite 注入)
+const envConfig = process.env.FIREBASE_CONFIG ? JSON.parse(process.env.FIREBASE_CONFIG as string) : null;
+
+const firebaseConfig = envConfig || {
   apiKey: "YOUR_API_KEY",
   authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
   projectId: "YOUR_PROJECT_ID",
@@ -25,10 +27,14 @@ let storage: any;
 let functions: any;
 
 if (isFirebaseConfigured) {
-  const app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  storage = getStorage(app);
-  functions = getFunctions(app);
+  try {
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    storage = getStorage(app);
+    functions = getFunctions(app);
+  } catch (e) {
+    console.error("Firebase 初始化失敗:", e);
+  }
 } else {
   console.warn("⚠️ Firebase 尚未設定：將使用 LocalStorage 模式運行 (僅本機儲存)。");
 }
