@@ -1,0 +1,8 @@
+{
+  "name": "訫肌 - 頭皮管理中心",
+  "description": "A high-end scalp analysis application that generates professional, non-medical maintenance reports based on customer data and observations using Gemini AI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
